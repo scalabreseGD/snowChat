@@ -151,7 +151,7 @@ if st.session_state.messages[-1]["role"] != "assistant":
         )["answer"]
         append_message(result)
         if get_sql(result):
-            conn = SnowflakeConnection('credentials.json').get_session()
+            conn = SnowflakeConnection().get_session()
             df = execute_sql(get_sql(result), conn)
             if df is not None:
                 callback_handler.display_dataframe(df)

@@ -95,7 +95,7 @@ def run():
     config = Config()
 
 
-    conn = SnowflakeConnection('credentials.json')
+    conn = SnowflakeConnection()
     loader = SnowflakeDDLLoader(conn)
     path = loader.ingest_files('sql/comp_sales')
 
