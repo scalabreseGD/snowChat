@@ -1,8 +1,8 @@
-import streamlit as st
-
-from snowflake.snowpark.session import Session
-from snowflake.snowpark.version import VERSION
+import json
 from typing import Any, Dict
+
+import streamlit as st
+from snowflake.snowpark.session import Session
 
 
 class SnowflakeConnection:
@@ -23,9 +23,17 @@ class SnowflakeConnection:
 
     """
 
-    def __init__(self):
-        self.connection_parameters = self._get_connection_parameters_from_env()
+    def __init__(self, credentials_path: str = None):
+        if credentials_path:
+            self.__connection_parameters = self._get_connection_parameters_from_path(credentials_path)
+        else:
+            self.__connection_parameters = self._get_connection_parameters_from_env()
         self.session = None
+
+    @staticmethod
+    def _get_connection_parameters_from_path(path) -> Dict[str, Any]:
+        with open(path) as credentials:
+            return json.load(credentials)
 
     @staticmethod
     def _get_connection_parameters_from_env() -> Dict[str, Any]:
@@ -47,6 +55,17 @@ class SnowflakeConnection:
             session: Snowflake connection session.
         """
         if self.session is None:
-            self.session = Session.builder.configs(self.connection_parameters).create()
+            self.session = Session.builder.configs(self.__connection_parameters).create()
             self.session.sql_simplifier_enabled = True
         return self.session
+
+    def get_uri(self):
+        return f"snowflake://{self.__connection_parameters['user']}:{self.__connection_parameters['password']}@{self.__connection_parameters['account']}/{self.__connection_parameters['database']}/{self.__connection_parameters['schema']}?warehouse={self.__connection_parameters['warehouse']}&role={self.__connection_parameters['role']}"
+
+    @property
+    def database(self):
+        return self.__connection_parameters['database']
+
+    @property
+    def schema(self):
+        return self.__connection_parameters['schema']

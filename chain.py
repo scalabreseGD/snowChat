@@ -6,9 +6,10 @@ from langchain.chains.question_answering import load_qa_chain
 from langchain.llms import OpenAI, Replicate
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import SupabaseVectorStore
-from supabase.client import Client, create_client
-
+from langchain.llms import OpenAI, Replicate
+from langchain.prompts.prompt import PromptTemplate
+from langchain.vectorstores import Milvus
+from langchain_experimental.sql import SQLDatabaseChain
 
 template = """You are an AI chatbot having a conversation with a human.
 
@@ -66,9 +67,9 @@ LLAMA_PROMPT = PromptTemplate(
     template=LLAMA_TEMPLATE, input_variables=["question", "context"]
 )
 
-supabase_url = st.secrets["SUPABASE_URL"]
-supabase_key = st.secrets["SUPABASE_SERVICE_KEY"]
-supabase: Client = create_client(supabase_url, supabase_key)
+# supabase_url = st.secrets["SUPABASE_URL"]
+# supabase_key = st.secrets["SUPABASE_SERVICE_KEY"]
+# supabase: Client = create_client(supabase_url, supabase_key)
 
 VERSION = "2a7f981751ec7fdf87b5b91ad4db53683a98082e9ff7bfd12c8cd5ea85980a52"
 LLAMA = "a16z-infra/llama13b-v2-chat:{}".format(VERSION)
@@ -113,7 +114,7 @@ def get_chain_gpt(vectorstore, callback_handler=None):
     q_llm = OpenAI(
         temperature=0.1,
         openai_api_key=st.secrets["OPENAI_API_KEY"],
-        model_name="gpt-3.5-turbo-16k",
+        model_name="gpt-3.5-turbo",
         max_tokens=500,
     )
 
@@ -137,7 +138,7 @@ def get_chain_gpt(vectorstore, callback_handler=None):
     return conv_chain
 
 
-def load_chain(model_name="GPT-3.5", callback_handler=None):
+def load_chain(model_name="GPT-3.5", callback_handler=None, snowflake_uri: str = None):
     """
     Load the chain from the local file system
 
@@ -149,8 +150,10 @@ def load_chain(model_name="GPT-3.5", callback_handler=None):
     embeddings = OpenAIEmbeddings(
         openai_api_key=st.secrets["OPENAI_API_KEY"], model="text-embedding-ada-002"
     )
-    vectorstore = SupabaseVectorStore(
-        embedding=embeddings, client=supabase, table_name="documents"
+    vectorstore = Milvus(
+        embedding_function=embeddings,
+        collection_name="LangChainCollection",
+        connection_args={"host": st.secrets['MILVUS_HOST'], "port": st.secrets['MILVUS_PORT']}
     )
     return (
         get_chain_gpt(vectorstore, callback_handler=callback_handler)

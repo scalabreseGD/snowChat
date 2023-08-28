@@ -1,13 +1,21 @@
-import streamlit as st
 import re
 import warnings
 
-from chain import load_chain
-from utils.snowchat_ui import message_func
-from utils.snowddl import Snowddl
+import streamlit as st
 from snowflake.snowpark.exceptions import SnowparkSQLException
+
+from chain import load_chain
+from utils import utils as u
 from utils.snow_connect import SnowflakeConnection
-from utils.snowchat_ui import StreamlitUICallbackHandler
+from utils.snowchat_ui import message_func, StreamlitUICallbackHandler
+from utils.snowddl import Snowddl
+
+# workaround for https://github.com/snowflakedb/snowflake-sqlalchemy/issues/380.
+try:
+    u.snowflake_sqlalchemy_20_monkey_patches()
+except Exception as e:
+    raise ValueError("Please run `pip install snowflake-sqlalchemy`")
+
 
 warnings.filterwarnings("ignore")
 chat_history = []
@@ -141,10 +149,9 @@ if st.session_state.messages[-1]["role"] != "assistant":
         result = chain(
             {"question": content, "chat_history": st.session_state["history"]}
         )["answer"]
-        # print(result)
         append_message(result)
         if get_sql(result):
-            conn = SnowflakeConnection().get_session()
+            conn = SnowflakeConnection('credentials.json').get_session()
             df = execute_sql(get_sql(result), conn)
             if df is not None:
                 callback_handler.display_dataframe(df)
