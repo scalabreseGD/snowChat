@@ -1,15 +1,13 @@
 import streamlit as st
-
-from langchain.prompts.prompt import PromptTemplate
 from langchain.chains import ConversationalRetrievalChain, LLMChain
 from langchain.chains.question_answering import load_qa_chain
-from langchain.llms import OpenAI, Replicate
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import OpenAI, Replicate
 from langchain.prompts.prompt import PromptTemplate
 from langchain.vectorstores import Milvus
-from langchain_experimental.sql import SQLDatabaseChain
+from pandasai import PandasAI
+from pandasai.llm.openai import OpenAI as pdOpenAi
 
 template = """You are an AI chatbot having a conversation with a human.
 
@@ -32,6 +30,8 @@ Based on the question provided, if it pertains to data analysis or SQL tasks, ge
 **You are only required to write one SQL query per question.**
 
 If the question or context does not clearly involve SQL or data analysis tasks, respond appropriately without generating SQL queries. 
+
+If the question asks which plotting strategy should be used, respond appropriately.
 
 When the user expresses gratitude or says "Thanks", interpret it as a signal to conclude the conversation. Respond with an appropriate closing statement without generating further SQL queries.
 
@@ -138,7 +138,7 @@ def get_chain_gpt(vectorstore, callback_handler=None):
     return conv_chain
 
 
-def load_chain(model_name="GPT-3.5", callback_handler=None, snowflake_uri: str = None):
+def load_chain(model_name="GPT-3.5", callback_handler=None):
     """
     Load the chain from the local file system
 
@@ -160,3 +160,70 @@ def load_chain(model_name="GPT-3.5", callback_handler=None, snowflake_uri: str =
         if model_name == "GPT-3.5"
         else get_chain_replicate(vectorstore, callback_handler=callback_handler)
     )
+
+
+class ChainManager:
+    def __init__(self, model_name="GPT-3.5", callback_handler=None):
+        self.model_name = model_name
+        self.callback_handler = callback_handler
+        self.vectorstore = Milvus(
+            embedding_function=OpenAIEmbeddings(
+                openai_api_key=st.secrets["OPENAI_API_KEY"], model="text-embedding-ada-002"
+            ),
+            collection_name="LangChainCollection",
+            connection_args={"host": st.secrets['MILVUS_HOST'], "port": st.secrets['MILVUS_PORT']}
+        )
+        self.q_llm = None
+        self.llm = None
+        self.__init_llm()
+
+    def __init_llm(self):
+        if self.model_name == "GPT-3.5":
+            self.q_llm = OpenAI(
+                temperature=0.1,
+                openai_api_key=st.secrets["OPENAI_API_KEY"],
+                model_name="gpt-3.5-turbo",
+                max_tokens=500,
+            )
+
+            self.llm = ChatOpenAI(
+                model_name="gpt-3.5-turbo",
+                temperature=0.5,
+                openai_api_key=st.secrets["OPENAI_API_KEY"],
+                max_tokens=500,
+                callbacks=[self.callback_handler],
+                streaming=True,
+            )
+            self.pdAi = pdOpenAi(api_token=st.secrets["OPENAI_API_KEY"])
+            self.pandas_ai = PandasAI(llm=self.pdAi,
+                                      enable_cache=False,
+                                      conversational=True
+                                      # save_charts=True,
+                                      # save_charts_path="",
+                                      )
+        else:
+            self.q_llm = Replicate(
+                model=LLAMA,
+                input={"temperature": 0.75, "max_length": 200, "top_p": 1},
+                replicate_api_token=st.secrets["REPLICATE_API_TOKEN"],
+            )
+            self.llm = Replicate(
+                model=LLAMA,
+                input={"temperature": 0.75, "max_length": 200, "top_p": 1},
+                replicate_api_token=st.secrets["REPLICATE_API_TOKEN"],
+            )
+            self.pandas_ai = PandasAI(llm=self.q_llm,
+                                      enforce_privacy=True,
+                                      conversational=False)
+
+    def get_chain(self):
+        question_generator = LLMChain(llm=self.q_llm, prompt=condense_question_prompt)
+
+        doc_chain = load_qa_chain(llm=self.llm, chain_type="stuff", prompt=QA_PROMPT)
+        conv_chain = ConversationalRetrievalChain(
+            callbacks=[self.callback_handler],
+            retriever=self.vectorstore.as_retriever(),
+            combine_docs_chain=doc_chain,
+            question_generator=question_generator,
+        )
+        return conv_chain

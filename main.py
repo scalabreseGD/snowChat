@@ -1,10 +1,12 @@
 import re
 import warnings
 
+import pandas
 import streamlit as st
+from snowflake.snowpark import Session
 from snowflake.snowpark.exceptions import SnowparkSQLException
 
-from chain import load_chain
+from chain import ChainManager
 from utils import utils as u
 from utils.snow_connect import SnowflakeConnection
 from utils.snowchat_ui import message_func, StreamlitUICallbackHandler
@@ -15,7 +17,6 @@ try:
     u.snowflake_sqlalchemy_20_monkey_patches()
 except Exception as e:
     raise ValueError("Please run `pip install snowflake-sqlalchemy`")
-
 
 warnings.filterwarnings("ignore")
 chat_history = []
@@ -91,7 +92,8 @@ for message in st.session_state.messages:
 
 callback_handler = StreamlitUICallbackHandler()
 
-chain = load_chain(st.session_state["model"], callback_handler)
+chain_manager = ChainManager(st.session_state["model"], callback_handler)
+chain = chain_manager.get_chain()
 
 
 def append_chat_history(question, answer):
@@ -116,13 +118,13 @@ def append_message(content, role="assistant", display=False):
         return
 
 
-def handle_sql_exception(query, conn, e, retries=2):
+def handle_sql_exception(query, conn, e, retries=2) -> pandas.DataFrame:
     append_message("Uh oh, I made an error, let me try to fix it..")
     error_message = (
-        "You gave me a wrong SQL. FIX The SQL query by searching the schema definition:  \n```sql\n"
-        + query
-        + "\n```\n Error message: \n "
-        + str(e)
+            "You gave me a wrong SQL. FIX The SQL query by searching the schema definition:  \n```sql\n"
+            + query
+            + "\n```\n Error message: \n "
+            + str(e)
     )
     new_query = chain({"question": error_message, "chat_history": ""})["answer"]
     append_message(new_query)
@@ -133,12 +135,12 @@ def handle_sql_exception(query, conn, e, retries=2):
         return None
 
 
-def execute_sql(query, conn, retries=2):
+def execute_sql(query, conn: Session, retries=2) -> pandas.DataFrame:
     if re.match(r"^\s*(drop|alter|truncate|delete|insert|update)\s", query, re.I):
         append_message("Sorry, I can't execute queries that can modify the database.")
         return None
     try:
-        return conn.sql(query).collect()
+        return conn.sql(query).to_pandas()
     except SnowparkSQLException as e:
         return handle_sql_exception(query, conn, e, retries)
 
@@ -146,9 +148,10 @@ def execute_sql(query, conn, retries=2):
 if st.session_state.messages[-1]["role"] != "assistant":
     content = st.session_state.messages[-1]["content"]
     if isinstance(content, str):
-        result = chain(
+        result_chain = chain(
             {"question": content, "chat_history": st.session_state["history"]}
-        )["answer"]
+        )
+        result = result_chain["answer"]
         append_message(result)
         if get_sql(result):
             conn = SnowflakeConnection().get_session()
@@ -156,3 +159,11 @@ if st.session_state.messages[-1]["role"] != "assistant":
             if df is not None:
                 callback_handler.display_dataframe(df)
                 append_message(df, "data", True)
+                res = chain_manager.pandas_ai.run(data_frame=df, prompt="Represent this dataframe as barchart")
+                # fig = plt.gcf()
+                # if fig.get_axes():
+                # st.pyplot(fig)
+                st.write(res)
+
+    # Sample
+    # what is the distribution of the rest_ids by IS_COMP_DAY_IND and brand_id in FLAG_REF and comp type FISC ?
