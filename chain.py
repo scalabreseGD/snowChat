@@ -1,13 +1,21 @@
+import os.path
+import re
+
 import streamlit as st
 from langchain.chains import ConversationalRetrievalChain, LLMChain
 from langchain.chains.question_answering import load_qa_chain
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import OpenAI, Replicate
+from langchain.llms.openai import BaseOpenAI
 from langchain.prompts.prompt import PromptTemplate
 from langchain.vectorstores import Milvus
-from pandasai import PandasAI
+from pandasai import PandasAI, SmartDataframe
+from pandasai.helpers.path import find_project_root
 from pandasai.llm.openai import OpenAI as pdOpenAi
+from pandasai.middlewares import StreamlitMiddleware, Middleware
+
+from utils.utils import get_plot_path
 
 template = """You are an AI chatbot having a conversation with a human.
 
@@ -162,6 +170,17 @@ def load_chain(model_name="GPT-3.5", callback_handler=None):
     )
 
 
+class SnowChatMiddleWare(Middleware):
+    #Todo Fix me
+    def run(self, code: str) -> str:
+        # clear_figure
+        code = re.sub('(plt.savefig\()(.*)(\))', 'plt.show()', code)
+        code = code.replace("plt.show()", "st.pyplot(plt.gcf(),clear_figure=True)")
+        if 'import streamlit' not in code:
+            code = "import streamlit as st\n" + code
+        return code
+
+
 class ChainManager:
     def __init__(self, model_name="GPT-3.5", callback_handler=None):
         self.model_name = model_name
@@ -173,7 +192,7 @@ class ChainManager:
             collection_name="LangChainCollection",
             connection_args={"host": st.secrets['MILVUS_HOST'], "port": st.secrets['MILVUS_PORT']}
         )
-        self.q_llm = None
+        self.q_llm:BaseOpenAI = None
         self.llm = None
         self.__init_llm()
 
@@ -195,11 +214,13 @@ class ChainManager:
                 streaming=True,
             )
             self.pdAi = pdOpenAi(api_token=st.secrets["OPENAI_API_KEY"])
+
             self.pandas_ai = PandasAI(llm=self.pdAi,
                                       enable_cache=False,
-                                      conversational=True
-                                      # save_charts=True,
-                                      # save_charts_path="",
+                                      conversational=True,
+                                      save_charts=True,
+                                      # save_charts_path=get_plot_path(False),
+                                      middlewares=[StreamlitMiddleware()],
                                       )
         else:
             self.q_llm = Replicate(
@@ -227,3 +248,6 @@ class ChainManager:
             question_generator=question_generator,
         )
         return conv_chain
+
+    def generate_code(self, prompt):
+        self.q_llm.r

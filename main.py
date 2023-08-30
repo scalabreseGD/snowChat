@@ -1,8 +1,10 @@
 import re
+import uuid
 import warnings
 
 import pandas
 import streamlit as st
+from PIL import Image
 from snowflake.snowpark import Session
 from snowflake.snowpark.exceptions import SnowparkSQLException
 
@@ -11,6 +13,7 @@ from utils import utils as u
 from utils.snow_connect import SnowflakeConnection
 from utils.snowchat_ui import message_func, StreamlitUICallbackHandler
 from utils.snowddl import Snowddl
+from utils.utils import get_plot_path
 
 # workaround for https://github.com/snowflakedb/snowflake-sqlalchemy/issues/380.
 try:
@@ -66,6 +69,8 @@ if st.sidebar.button("Reset Chat"):
 
 st.write(styles_content, unsafe_allow_html=True)
 
+if 'session_id' not in st.session_state.keys():
+    st.session_state['session_id'] = str(uuid.uuid4()).replace('-', '')
 # Initialize the chat messages history
 if "messages" not in st.session_state.keys():
     st.session_state["messages"] = INITIAL_MESSAGE
@@ -159,11 +164,11 @@ if st.session_state.messages[-1]["role"] != "assistant":
             if df is not None:
                 callback_handler.display_dataframe(df)
                 append_message(df, "data", True)
-                res = chain_manager.pandas_ai.run(data_frame=df, prompt="Represent this dataframe as barchart")
-                # fig = plt.gcf()
-                # if fig.get_axes():
-                # st.pyplot(fig)
-                st.write(res)
+                # res = chain_manager.pandas_ai.run(data_frame=df,
+                #                                   prompt="Show this dataframe as scatter plot with positve IS_COMP_DAY_IND as blue and negative as red")
+                # image = Image.open(get_plot_path(True))
+                # st.image(image, caption='Plot')
 
     # Sample
     # what is the distribution of the rest_ids by IS_COMP_DAY_IND and brand_id in FLAG_REF and comp type FISC ?
+    #Note: Check the path of the plot

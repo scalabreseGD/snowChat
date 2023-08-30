@@ -1,6 +1,9 @@
+import os
+
 import snowflake.snowpark as snowpark
 import streamlit as st
 import snowflake.snowpark.types as T
+from pandasai.helpers.path import find_project_root
 
 
 def snowflake_sqlalchemy_20_monkey_patches():
@@ -49,3 +52,11 @@ def describeSnowparkDF(snowpark_df: snowpark.DataFrame):
 
     # Calculte statistics for our dataset
     st.dataframe(snowpark_df.describe().sort('SUMMARY'), use_container_width=True)
+
+
+def get_plot_path(is_read: bool):
+    if is_read:
+        return os.path.join(find_project_root(), st.session_state['session_id'], 'exports', 'charts',
+                            'temp_chart.png')
+    else:
+        return os.path.join(find_project_root(), st.session_state['session_id'])
