@@ -1,5 +1,8 @@
 version: '3.5'
-
+x-redash-service: &redash-service
+  image: redash/redash
+  env_file: ./.env
+  restart: always
 services:
   etcd:
     container_name: milvus-etcd
@@ -23,7 +26,7 @@ services:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
     command: minio server /minio_data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 30s
       timeout: 20s
       retries: 3
@@ -31,7 +34,7 @@ services:
   standalone:
     container_name: milvus-standalone
     image: milvusdb/milvus:v2.2.13
-    command: ["milvus", "run", "standalone"]
+    command: [ "milvus", "run", "standalone" ]
     restart: always
     environment:
       ETCD_ENDPOINTS: etcd:2379
@@ -53,6 +56,60 @@ services:
       - "8000:3000"
     depends_on:
       - "standalone"
+
+  server:
+    <<: *redash-service
+    image: redash/redash:latest
+    container_name: redash_server
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - "5000:5000"
+    command: server
+    #Note: run the following script after starting the docker images
+    # docker-compose run --rm server create_db
+
+  worker:
+    <<: *redash-service
+    image: redash/redash:latest
+    container_name: redash_worker
+    restart: always
+    depends_on:
+      - server
+      - redis
+    environment:
+      QUEUES: "queries,celery"
+      WORKERS_COUNT: 1
+    command: worker
+
+  scheduler:
+    <<: *redash-service
+    image: redash/redash:latest
+    container_name: redash_scheduler
+    restart: always
+    depends_on:
+      - server
+      - redis
+    command: scheduler
+
+  postgres:
+    image: postgres:13
+    container_name: redash_postgres
+    restart: always
+    volumes:
+      - ./volumes/postgres/data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: redash
+      POSTGRES_PASSWORD: redash
+      POSTGRES_DB: redash
+
+  redis:
+    image: redis:6
+    container_name: redash_redis
+    restart: always
+    ports:
+      - "6379:6379"
 
 networks:
   default:
